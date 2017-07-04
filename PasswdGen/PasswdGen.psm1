@@ -19,9 +19,9 @@ function SS64pwgen_ToHash {
 
     #>
     param(
-          [Parameter(ValueFromPipeline = $false)] [string] $Algorithm = 'SHA1' , ## algorithm to use
-          [Parameter(ValueFromPipeline = $true)] [string] $InputString           ## String from which to compute hash
-         )
+        [Parameter(ValueFromPipeline = $false)] [string] $Algorithm = 'SHA1' , ## algorithm to use
+        [Parameter(ValueFromPipeline = $true)] [string] $InputString           ## String from which to compute hash
+    )
 
     $utf8_encoder = [System.Text.Encoding]::UTF8
     $input_as_byte_array = $utf8_encoder.GetBytes($InputString)
@@ -48,8 +48,8 @@ function SS64pwgen_ToBase64 {
 
     #>
     param(
-          [Parameter(ValueFromPipeline = $true)] [byte[]] $ByteArray ## byte array from which to compute base64
-         )
+        [Parameter(ValueFromPipeline = $true)] [byte[]] $ByteArray ## byte array from which to compute base64
+    )
 
     return [System.Convert]::ToBase64String($ByteArray)
 }
@@ -73,25 +73,32 @@ function Get-StrongPw {
 
     #>
 
-    [array]$sites = $args -split ' '
+    begin {
+        [array]$sites = $args -split ' '        
+        if ($sites.length -eq 0) { 
+            return 
+        }        
+        $key = Read-Host -Prompt "Encryption key:" -AsSecureString
+        $loginList = @()
+    }  
 
-    if($sites.length -eq 0) { return }
-
-    $key = Read-Host -Prompt "Encryption key:" -AsSecureString
-    $strkey = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($key))
-
-    $length = ($sites | Measure-Object -Maximum -Property Length).Maximum + 22
-
-    foreach ($site in $sites)
-    {
-        $siteLength = $site.Length 
-        $pw = [string](SS64pwgen_ToBase64 -ByteArray (SS64pwgen_ToHash -Algorithm SHA256 -InputString "${strkey}:${site}")).Replace("+","E").Replace("/","a").Substring(0,7)
-        $pw2 = [string](SS64pwgen_ToBase64 -ByteArray (SS64pwgen_ToHash -Algorithm SHA256 -InputString "${strkey}:${site}")).Replace("+","E").Replace("/","a").Substring(7,13)
-        Write-Host "Password for [${site}] :" ("${pw}!${pw2}").PadLeft($length - $siteLength," ")
+    process {
+        $strkey = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($key))
+        foreach ($site in $sites) {
+            $pw = [string](SS64pwgen_ToBase64 -ByteArray (SS64pwgen_ToHash -Algorithm SHA256 -InputString "${strkey}:${site}")).Replace("+", "E").Replace("/", "a").Substring(0, 20)
+            $loginHash = [PSCustomObject]@{
+                LoginDetails = $site
+                Password     = ${pw}#.Insert(7, "")
+            }
+            $loginList += $loginHash
+        }
+        $pw = [string](SS64pwgen_ToBase64 -ByteArray (SS64pwgen_ToHash -Algorithm SHA256 -InputString ":${strkey}:")).Replace("+", "E").Replace("/", "a").Substring(0, 20)
     }
 
-    $pw = [string](SS64pwgen_ToBase64 -ByteArray (SS64pwgen_ToHash -Algorithm SHA256 -InputString ":${strkey}:")).Replace("+","E").Replace("/","a").Substring(0,20)
-    Write-Host "Verification code: ${pw}" -ForegroundColor Magenta
+    end {
+        Write-Host "Verification code: ${pw}" -ForegroundColor Magenta
+        return $loginList        
+    }    
 }
 
 Export-ModuleMember Get-StrongPw
